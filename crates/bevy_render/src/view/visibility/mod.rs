@@ -121,9 +121,15 @@ impl Plugin for VisibilityPlugin {
 pub fn calculate_bounds(
     mut commands: Commands,
     meshes: Res<Assets<Mesh>>,
-    without_aabb: Query<(Entity, &Handle<Mesh>), (Without<Aabb>, Without<NoFrustumCulling>)>,
+    without_aabb_or_with_changed_mesh: Query<
+        (Entity, &Handle<Mesh>),
+        (
+            Or<(Without<Aabb>, Changed<Handle<Mesh>>)>,
+            Without<NoFrustumCulling>,
+        ),
+    >,
 ) {
-    for (entity, mesh_handle) in without_aabb.iter() {
+    for (entity, mesh_handle) in without_aabb_or_with_changed_mesh.iter() {
         if let Some(mesh) = meshes.get(mesh_handle) {
             if let Some(aabb) = mesh.compute_aabb() {
                 commands.entity(entity).insert(aabb);
