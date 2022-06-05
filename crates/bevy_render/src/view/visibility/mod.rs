@@ -1,10 +1,12 @@
 mod render_layers;
 
+use std::collections::HashMap;
+
 use bevy_math::Vec3A;
 pub use render_layers::*;
 
 use bevy_app::{CoreStage, Plugin};
-use bevy_asset::{Assets, Handle};
+use bevy_asset::{AssetEvent, Assets, Handle};
 use bevy_ecs::prelude::*;
 use bevy_reflect::std_traits::ReflectDefault;
 use bevy_reflect::Reflect;
@@ -128,11 +130,37 @@ pub fn calculate_bounds(
             Without<NoFrustumCulling>,
         ),
     >,
+    mut entity_mesh_map: Local<HashMap<Handle<Mesh>, Vec<Entity>>>,
+    mut mesh_events: EventReader<AssetEvent<Mesh>>,
 ) {
     for (entity, mesh_handle) in without_aabb_or_with_changed_mesh.iter() {
+        // Record entities that have mesh handles.
+        entity_mesh_map
+            .entry(mesh_handle.clone())
+            .or_default()
+            .push(entity);
+
         if let Some(mesh) = meshes.get(mesh_handle) {
             if let Some(aabb) = mesh.compute_aabb() {
                 commands.entity(entity).insert(aabb);
+            }
+        }
+    }
+
+    // Calculate bounds for entities whose meshes have been mutated.
+    let updated_mesh_handles = mesh_events.iter().filter_map(|event| match event {
+        AssetEvent::Modified { handle } => Some(handle),
+        _ => None,
+    });
+    let updated_meshes_and_entities = updated_mesh_handles.filter_map(|mesh_handle| {
+        meshes
+            .get(mesh_handle)
+            .zip(entity_mesh_map.get(mesh_handle))
+    });
+    for (mesh, entities) in updated_meshes_and_entities {
+        if let Some(aabb) = mesh.compute_aabb() {
+            for entity in entities {
+                commands.entity(*entity).insert(aabb.clone());
             }
         }
     }
