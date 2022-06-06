@@ -1,7 +1,5 @@
 mod render_layers;
 
-use std::collections::HashMap;
-
 use bevy_math::Vec3A;
 pub use render_layers::*;
 
@@ -12,6 +10,7 @@ use bevy_reflect::std_traits::ReflectDefault;
 use bevy_reflect::Reflect;
 use bevy_transform::components::GlobalTransform;
 use bevy_transform::TransformSystem;
+use bevy_utils::HashMap;
 
 use crate::{
     camera::{Camera, CameraProjection, OrthographicProjection, PerspectiveProjection, Projection},
