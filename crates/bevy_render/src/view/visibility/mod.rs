@@ -168,20 +168,19 @@ pub fn calculate_bounds(
     }
 
     // Calculate bounds for entities whose meshes have been mutated.
-    let updated_mesh_handles = mesh_events.iter().filter_map(|event| match event {
-        AssetEvent::Modified { handle } => Some(handle),
-        _ => None,
-    });
-    let updated_meshes_and_entities = updated_mesh_handles.filter_map(|mesh_handle| {
-        meshes
-            .get(mesh_handle)
-            .zip(entity_mesh_map.get(mesh_handle))
-    });
-    for (mesh, entities) in updated_meshes_and_entities {
-        if let Some(aabb) = mesh.compute_aabb() {
-            for entity in entities {
-                commands.entity(*entity).insert(aabb.clone());
-            }
+    let to_update = |event: &AssetEvent<Mesh>| {
+        let handle = match event {
+            AssetEvent::Modified { handle } => handle,
+            _ => return None,
+        };
+        let mesh = meshes.get(handle)?;
+        let entities_with_handle = entity_mesh_map.get(handle)?;
+        let aabb = mesh.compute_aabb()?;
+        Some((aabb, entities_with_handle))
+    };
+    for (aabb, entities_with_handle) in mesh_events.iter().filter_map(to_update) {
+        for entity in entities_with_handle {
+            commands.entity(*entity).insert(aabb.clone());
         }
     }
 }
