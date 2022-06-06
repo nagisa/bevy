@@ -119,6 +119,23 @@ impl Plugin for VisibilityPlugin {
     }
 }
 
+/// Calculates and updates [`Aabb`]s for [`Entities`](Entity) with [`Mesh`]es.
+/// To opt out of bound calculation for an `Entity`, give it the [`NoFrustumCulling`] component.
+///
+/// # Examples
+///
+/// To automatically get calculated `Aabb`s that will update with `Mesh` assignment/mutation, add
+/// this as a [`System`] to your `App`:
+///
+/// ```
+/// # use bevy_app::prelude::App;
+/// # use bevy_render::view::calculate_bounds;
+///
+/// App::new()
+///     .add_system(calculate_bounds)
+///     // other systems
+/// # ;
+/// ```
 pub fn calculate_bounds(
     mut commands: Commands,
     meshes: Res<Assets<Mesh>>,
