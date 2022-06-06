@@ -1,5 +1,7 @@
 mod render_layers;
 
+use smallvec::SmallVec;
+
 use bevy_math::Vec3A;
 pub use render_layers::*;
 
@@ -146,7 +148,7 @@ pub fn calculate_bounds(
             Without<NoFrustumCulling>,
         ),
     >,
-    mut entity_mesh_map: Local<HashMap<Handle<Mesh>, Vec<Entity>>>,
+    mut entity_mesh_map: Local<HashMap<Handle<Mesh>, SmallVec<[Entity; 1]>>>,
     mut mesh_events: EventReader<AssetEvent<Mesh>>,
 ) {
     for (entity, mesh_handle) in without_aabb_or_with_changed_mesh.iter() {
