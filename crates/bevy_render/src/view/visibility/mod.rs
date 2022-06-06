@@ -134,7 +134,9 @@ pub fn calculate_bounds(
     mut mesh_events: EventReader<AssetEvent<Mesh>>,
 ) {
     for (entity, mesh_handle) in without_aabb_or_with_changed_mesh.iter() {
-        // Record entities that have mesh handles.
+        // Record entities that have mesh handles. Note that this list _could_ have duplicates if
+        // an entity is assigned a new mesh and then re-assigned the old mesh. This case should be
+        // rare so, for now, we'll risk duplicating `Aabb` cloning+assigning.
         entity_mesh_map
             .entry(mesh_handle.clone())
             .or_default()
