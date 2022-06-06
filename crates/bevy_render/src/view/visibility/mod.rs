@@ -154,7 +154,7 @@ pub fn calculate_bounds(
         // an entity is assigned a new mesh and then re-assigned the old mesh. This case should be
         // rare so, for now, we'll risk duplicating `Aabb` cloning+assigning.
         entity_mesh_map
-            .entry(mesh_handle.clone())
+            .entry(mesh_handle.clone_weak())
             .or_default()
             .push(entity);
 
