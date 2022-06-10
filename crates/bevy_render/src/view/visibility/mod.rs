@@ -183,6 +183,11 @@ pub fn calculate_bounds(
 /// been assigned new `Mesh`es as well as `Entities` whose `Mesh` has been directly mutated.
 ///
 /// To opt out of bound calculation for an `Entity`, give it the [`NoFrustumCulling`] component.
+///
+/// **Note** This system needs to remove entities from their collection in
+/// [`EntityMeshRelationships`] whenever a mesh handle is reassigned or an entity's mesh handle is
+/// removed. This may impact performance if meshes with many entities are frequently
+/// reassigned/removed.
 pub fn update_bounds(
     mut commands: Commands,
     meshes: Res<Assets<Mesh>>,
