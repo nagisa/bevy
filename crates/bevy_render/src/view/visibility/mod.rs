@@ -71,6 +71,8 @@ impl VisibleEntities {
     }
 }
 
+/// Tracks which entities have which meshes. This is used by the [`calculate_bounds`] and
+/// [`update_bounds`] systems to manage [`Aabb`]s of [`Entities`](Entity).
 #[derive(Debug, Default, Clone)]
 pub struct EntityMeshRelationships {
     entities_with_mesh: HashMap<Handle<Mesh>, SmallVec<[Entity; 1]>>,
