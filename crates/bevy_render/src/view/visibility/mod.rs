@@ -71,8 +71,8 @@ impl VisibleEntities {
     }
 }
 
-/// Tracks which entities have which meshes. This is used by the [`calculate_bounds`] and
-/// [`update_bounds`] systems to manage [`Aabb`]s of [`Entities`](Entity).
+/// Tracks which [`Entities`](Entity) have which meshes for entities whose [`Aabb`]s are managed by
+/// the [`calculate_bounds`] and [`update_bounds`] systems.
 #[derive(Debug, Default, Clone)]
 pub struct EntityMeshRelationships {
     entities_with_mesh: HashMap<Handle<Mesh>, SmallVec<[Entity; 1]>>,
@@ -81,10 +81,6 @@ pub struct EntityMeshRelationships {
 
 impl EntityMeshRelationships {
     /// Register the passed `entity` as having the passed `mesh_handle`.
-    ///
-    /// Note that this list _could_ have duplicates if an entity is assigned a new mesh and
-    /// then re-assigned the old mesh. This case should be rare so, for now, we'll risk
-    /// duplicating `Aabb` cloning+assigning.
     fn register(&mut self, entity: Entity, mesh_handle: &Handle<Mesh>) {
         self.entities_with_mesh
             .entry(mesh_handle.clone_weak())
@@ -169,10 +165,9 @@ pub fn calculate_bounds(
     mut entity_mesh_rel: ResMut<EntityMeshRelationships>,
 ) {
     for (entity, mesh_handle) in without_aabb.iter() {
-        entity_mesh_rel.register(entity, mesh_handle);
-
         if let Some(mesh) = meshes.get(mesh_handle) {
             if let Some(aabb) = mesh.compute_aabb() {
+                entity_mesh_rel.register(entity, mesh_handle);
                 commands.entity(entity).insert(aabb);
             }
         }
@@ -205,9 +200,9 @@ pub fn update_bounds(
 
     for (entity, mesh_handle, mut aabb) in mesh_reassigned.iter_mut() {
         entity_mesh_rel.deregister(entity);
-        entity_mesh_rel.register(entity, mesh_handle);
         if let Some(mesh) = meshes.get(mesh_handle) {
             if let Some(new_aabb) = mesh.compute_aabb() {
+                entity_mesh_rel.register(entity, mesh_handle);
                 *aabb = new_aabb;
             }
         }
