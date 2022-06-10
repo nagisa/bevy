@@ -78,7 +78,7 @@ pub struct EntityMeshRelationships {
 }
 
 impl EntityMeshRelationships {
-    /// Register the passed `entity` has having the passed `mesh_handle`.
+    /// Register the passed `entity` as having the passed `mesh_handle`.
     ///
     /// Note that this list _could_ have duplicates if an entity is assigned a new mesh and
     /// then re-assigned the old mesh. This case should be rare so, for now, we'll risk
