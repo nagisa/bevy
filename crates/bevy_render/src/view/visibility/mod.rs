@@ -167,7 +167,6 @@ pub fn calculate_bounds(
     mut entity_mesh_rel: ResMut<EntityMeshRelationships>,
 ) {
     for (entity, mesh_handle) in without_aabb.iter() {
-        // Record entities whose Aabb's we're managing.
         entity_mesh_rel.register(entity, mesh_handle);
 
         if let Some(mesh) = meshes.get(mesh_handle) {
@@ -193,21 +192,13 @@ pub fn update_bounds(
     mut mesh_events: EventReader<AssetEvent<Mesh>>,
     entities_lost_mesh: RemovedComponents<Handle<Mesh>>,
 ) {
-    // If an entity's mesh handle was removed, unlink them.
     for entity in entities_lost_mesh.iter() {
         entity_mesh_rel.deregister(entity);
     }
 
-    // If an entity with an Aabb was assigned a new mesh, move it to the new list and update its
-    // Aabb.
     for (entity, mesh_handle, mut aabb) in mesh_reassigned.iter_mut() {
-        // Remove it from the previous list
         entity_mesh_rel.deregister(entity);
-
-        // Add it to the new list.
         entity_mesh_rel.register(entity, mesh_handle);
-
-        // Update its Aabb
         if let Some(mesh) = meshes.get(mesh_handle) {
             if let Some(new_aabb) = mesh.compute_aabb() {
                 *aabb = new_aabb;
@@ -215,7 +206,6 @@ pub fn update_bounds(
         }
     }
 
-    // If an entity's mesh was mutated, update its Aabb.
     let to_update = |event: &AssetEvent<Mesh>| {
         let handle = match event {
             AssetEvent::Modified { handle } => handle,
