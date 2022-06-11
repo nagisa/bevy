@@ -1,15 +1,18 @@
 mod render_layers;
 
+use smallvec::SmallVec;
+
 use bevy_math::Vec3A;
 pub use render_layers::*;
 
 use bevy_app::{CoreStage, Plugin};
-use bevy_asset::{Assets, Handle};
+use bevy_asset::{AssetEvent, Assets, Handle};
 use bevy_ecs::prelude::*;
 use bevy_reflect::std_traits::ReflectDefault;
 use bevy_reflect::Reflect;
 use bevy_transform::components::GlobalTransform;
 use bevy_transform::TransformSystem;
+use bevy_utils::HashMap;
 
 use crate::{
     camera::{Camera, CameraProjection, OrthographicProjection, PerspectiveProjection, Projection},
@@ -68,9 +71,42 @@ impl VisibleEntities {
     }
 }
 
+/// Tracks which [`Entities`](Entity) have which meshes for entities whose [`Aabb`]s are managed by
+/// the [`calculate_bounds`] and [`update_bounds`] systems.
+#[derive(Debug, Default, Clone)]
+pub struct EntityMeshRelationships {
+    entities_with_mesh: HashMap<Handle<Mesh>, SmallVec<[Entity; 1]>>,
+    mesh_for_entity: HashMap<Entity, Handle<Mesh>>,
+}
+
+impl EntityMeshRelationships {
+    /// Register the passed `entity` as having the passed `mesh_handle`.
+    fn register(&mut self, entity: Entity, mesh_handle: &Handle<Mesh>) {
+        self.entities_with_mesh
+            .entry(mesh_handle.clone_weak())
+            .or_default()
+            .push(entity);
+        self.mesh_for_entity
+            .insert(entity, mesh_handle.clone_weak());
+    }
+
+    /// Deregisters the relationship between an `Entity` and `Mesh`. Used so [`update_bounds`] can
+    /// track which relationships are still active so `Aabb`s are updated correctly.
+    fn deregister(&mut self, entity: Entity) {
+        if let Some(mesh) = self.mesh_for_entity.remove(&entity) {
+            if let Some(entities) = self.entities_with_mesh.get_mut(&mesh) {
+                if let Some(idx) = entities.iter().position(|&e| e == entity) {
+                    entities.swap_remove(idx);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemLabel)]
 pub enum VisibilitySystems {
     CalculateBounds,
+    UpdateBounds,
     UpdateOrthographicFrusta,
     UpdatePerspectiveFrusta,
     UpdateProjectionFrusta,
@@ -83,51 +119,108 @@ impl Plugin for VisibilityPlugin {
     fn build(&self, app: &mut bevy_app::App) {
         use VisibilitySystems::*;
 
-        app.add_system_to_stage(
-            CoreStage::PostUpdate,
-            calculate_bounds.label(CalculateBounds),
-        )
-        .add_system_to_stage(
-            CoreStage::PostUpdate,
-            update_frusta::<OrthographicProjection>
-                .label(UpdateOrthographicFrusta)
-                .after(TransformSystem::TransformPropagate),
-        )
-        .add_system_to_stage(
-            CoreStage::PostUpdate,
-            update_frusta::<PerspectiveProjection>
-                .label(UpdatePerspectiveFrusta)
-                .after(TransformSystem::TransformPropagate),
-        )
-        .add_system_to_stage(
-            CoreStage::PostUpdate,
-            update_frusta::<Projection>
-                .label(UpdateProjectionFrusta)
-                .after(TransformSystem::TransformPropagate),
-        )
-        .add_system_to_stage(
-            CoreStage::PostUpdate,
-            check_visibility
-                .label(CheckVisibility)
-                .after(CalculateBounds)
-                .after(UpdateOrthographicFrusta)
-                .after(UpdatePerspectiveFrusta)
-                .after(UpdateProjectionFrusta)
-                .after(TransformSystem::TransformPropagate),
-        );
+        app.init_resource::<EntityMeshRelationships>()
+            .add_system_to_stage(
+                CoreStage::PostUpdate,
+                calculate_bounds.label(CalculateBounds),
+            )
+            .add_system_to_stage(CoreStage::PostUpdate, update_bounds.label(UpdateBounds))
+            .add_system_to_stage(
+                CoreStage::PostUpdate,
+                update_frusta::<OrthographicProjection>
+                    .label(UpdateOrthographicFrusta)
+                    .after(TransformSystem::TransformPropagate),
+            )
+            .add_system_to_stage(
+                CoreStage::PostUpdate,
+                update_frusta::<PerspectiveProjection>
+                    .label(UpdatePerspectiveFrusta)
+                    .after(TransformSystem::TransformPropagate),
+            )
+            .add_system_to_stage(
+                CoreStage::PostUpdate,
+                update_frusta::<Projection>
+                    .label(UpdateProjectionFrusta)
+                    .after(TransformSystem::TransformPropagate),
+            )
+            .add_system_to_stage(
+                CoreStage::PostUpdate,
+                check_visibility
+                    .label(CheckVisibility)
+                    .after(CalculateBounds)
+                    .after(UpdateOrthographicFrusta)
+                    .after(UpdatePerspectiveFrusta)
+                    .after(UpdateProjectionFrusta)
+                    .after(TransformSystem::TransformPropagate),
+            );
     }
 }
 
+/// Calculates [`Aabb`]s for [`Entities`](Entity) with [`Mesh`]es. To opt out of bound calculation
+/// for an `Entity`, give it the [`NoFrustumCulling`] component.
 pub fn calculate_bounds(
     mut commands: Commands,
     meshes: Res<Assets<Mesh>>,
     without_aabb: Query<(Entity, &Handle<Mesh>), (Without<Aabb>, Without<NoFrustumCulling>)>,
+    mut entity_mesh_rel: ResMut<EntityMeshRelationships>,
 ) {
     for (entity, mesh_handle) in without_aabb.iter() {
         if let Some(mesh) = meshes.get(mesh_handle) {
             if let Some(aabb) = mesh.compute_aabb() {
+                entity_mesh_rel.register(entity, mesh_handle);
                 commands.entity(entity).insert(aabb);
             }
+        }
+    }
+}
+
+/// Updates [`Aabb`]s for [`Entities`](Entity) with [`Mesh`]es. This includes `Entities` that have
+/// been assigned new `Mesh`es as well as `Entities` whose `Mesh` has been directly mutated.
+///
+/// To opt out of bound calculation for an `Entity`, give it the [`NoFrustumCulling`] component.
+///
+/// **Note** This system needs to remove entities from their collection in
+/// [`EntityMeshRelationships`] whenever a mesh handle is reassigned or an entity's mesh handle is
+/// removed. This may impact performance if meshes with many entities are frequently
+/// reassigned/removed.
+pub fn update_bounds(
+    mut commands: Commands,
+    meshes: Res<Assets<Mesh>>,
+    mut mesh_reassigned: Query<
+        (Entity, &Handle<Mesh>, &mut Aabb),
+        (Changed<Handle<Mesh>>, Without<NoFrustumCulling>),
+    >,
+    mut entity_mesh_rel: ResMut<EntityMeshRelationships>,
+    mut mesh_events: EventReader<AssetEvent<Mesh>>,
+    entities_lost_mesh: RemovedComponents<Handle<Mesh>>,
+) {
+    for entity in entities_lost_mesh.iter() {
+        entity_mesh_rel.deregister(entity);
+    }
+
+    for (entity, mesh_handle, mut aabb) in mesh_reassigned.iter_mut() {
+        entity_mesh_rel.deregister(entity);
+        if let Some(mesh) = meshes.get(mesh_handle) {
+            if let Some(new_aabb) = mesh.compute_aabb() {
+                entity_mesh_rel.register(entity, mesh_handle);
+                *aabb = new_aabb;
+            }
+        }
+    }
+
+    let to_update = |event: &AssetEvent<Mesh>| {
+        let handle = match event {
+            AssetEvent::Modified { handle } => handle,
+            _ => return None,
+        };
+        let mesh = meshes.get(handle)?;
+        let entities_with_handle = entity_mesh_rel.entities_with_mesh.get(handle)?;
+        let aabb = mesh.compute_aabb()?;
+        Some((aabb, entities_with_handle))
+    };
+    for (aabb, entities_with_handle) in mesh_events.iter().filter_map(to_update) {
+        for entity in entities_with_handle {
+            commands.entity(*entity).insert(aabb.clone());
         }
     }
 }
